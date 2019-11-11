@@ -1,59 +1,69 @@
-# multi-thread-key-value-storage-server
+kissdb
+======
 
-**Μούρτος Ηλίας 2302**
+(Keep It) Simple Stupid Database
 
-**Ντουμανόπουλος Χρήστος 2509**
+KISSDB is about the simplest key/value store you'll ever see, anywhere.
+It's written in plain vanilla C using only the standard string and FILE
+I/O functions, and should port to just about anything with a disk or
+something that acts like one.
 
-**Λειτουργικά Συστήματα - Εργαστήριο 1**
+It stores keys and values of fixed length in a stupid-simple file format
+based on fixed-size hash tables. If a hash collision occurrs, a new "page"
+of hash table is appended to the database. The format is append-only.
+There is no delete. Puts that replace an existing value, however, will not
+grow the file as they will overwrite the existing entry.
 
-Στο συγκεκριμένο εργαστήριο υλοποιήσαμε έναν απλό πολυνηματικό διακομιστή αποθήκευσης ζευγών κλειδιού-τιμής. Αρχικά μας δόθηκε ένας διακομιστής αποθήκευσης ζευγών κλειδιού-τιμής που λειτουργούσε σειριακά και εμείς έπρεπε να τον κάνουμε να λειτουργεί παράλληλα.
+Hash table size is a space/speed trade-off parameter. Larger hash tables
+will reduce collisions and speed things up a bit, at the expense of memory
+and disk space. A good size is usually about 1/2 the average number of
+entries you expect.
 
-Τα κύρια αρχεία(αυτά που επηρέαζαν εμάς και αυτά που πειράξαμε εμείς εν τέλει) του διακομιστή αποθήκευσης ζευγών κλειδιού-τιμής που μας δόθηκε ήταν ο server και ο client. Αρχικά ας περιγράψουμε πως ακριβώς λειτουργούν:
+Features:
 
-**server**** :** Ο server τρέχει όλη την ώρα περιμένοντας για νέες αιτήσεις. Αρχικά ανοίγει μια βάση δεδομένων, όπου θα αποθηκεύει τα κλειδιά με τις τιμές τους και θα τα ανακτά από εκεί όταν χρειάζεται. Στην συνέχεια μπαίνει σε μια επανάληψη και περιμένει κάποια νέα σύνδεση. Μόλις λάβει μια σύνδεση την &quot;αποκρυπτογραφεί&quot; δημιουργώντας μία αίτηση την οποία στην συνέχεια πρέπει να &quot;φέρει εις πέρας&quot;. Αυτές τις αιτήσεις τις λαμβάνει από τον client -για τον οποίο θα μιλήσουμε παρακάτω- μέσω κάποιων προκαθορισμένων sockets. Υπάρχουν 2 μορφών αιτήσεις,αιτήσεις PUT ή  αιτήσεις GET. Σε μια αίτηση PUT ο client αποθηκεύει το ζεύγος κλειδιού-τιμής στην βάση δεδομένων την οποία δημιουργεί παραπάνω και επιστρέφει στον client &quot;PUTOK\n&quot;, ενώ σε μια αίτηση GET διαβάζει από την βάση δεδομένων την τιμή που έχει το κλειδί της αίτησης και επιστρέφει στον client την τιμή του. Τέλος και αφού απαντήσει κλείνει την σύνδεση.
+ * Tiny, compiles to ~4k on an x86_64 Linux system
+ * Small memory footprint (only caches hash tables)
+ * Very space-efficient (on disk) if small hash tables are used
+ * Makes a decent effort to be robust on power loss
+ * Pretty respectably fast, especially given its simplicity
+ * 64-bit, file size limit is 2^64 bytes
+ * Ports to anything with a C compiler and stdlib/stdio
+ * Public domain
 
-**client**** :**Ο client δέχεται κάποιες παραμέτρους που κρίνουν το αν θα στείλει μια ή πολλές αιτήσεις(πχ η παράμετρος -i είναι για να στείλει πολλές αιτήσεις,η παράμετρος -o είναι για UserMode κοκ) και μετά τι αιτήσεις(-p για put -g για get) πρέπει να στείλει. Στην αρχή διαβάζει όλες τις παραμέτρους μια προς μια και θέτει τις τιμές αυτές στο πρόγραμμα ,στην συνέχεια ενημερώνει τις κατάλληλες παραμέτρους για την δημιουργία σύνδεσης και με βάση το αν πρέπει να στείλει μια αίτηση ή πολλές ετοιμάζει την αίτηση,στην μια με τα στοιχεία που του έχουν δοθεί (πχ  PUT:station.125:5 για να αλλάξετε σε 5 την τιμή του κλειδιού station.125) ενώ στις πολλές (πχ ./client –alocalhost –ik –p)  στέλνει k φορές MAX\_STATION\_ID αιτήσεις όπου MAX\_STATION\_ID μια σταθερά που έχει οριστεί στην αρχή του προγράμματος και k ένας αριθμός που δίνεται από τον χρήστη.
+Limitations:
 
-**Τρόπος λειτουργίας του παράλληλου προγράμματος:**
+ * Fixed-size keys and values, must recreate and copy to change any init size parameter
+ * Add/update only, no delete
+ * Iteration is supported but key order is undefined
+ * No search for subsets of keys/values
+ * No indexes
+ * No transactions
+ * No special recovery features if a database gets corrupted
+ * No built-in thread-safety (guard it with a mutex in MT code)
+ * No built-in caching of data (only hash tables are cached for lookup speed)
+ * No endian-awareness (currently), so big-endian DBs won't read on little-endian machines
 
-Για να κάνουμε τον server να λειτουργεί παράλληλα, αρχικά θα δημιουργήσουμε ένα νήμα μέσα στην main, το οποίο θα παίρνει τις συνδέσεις όταν γίνονται και θα τις τοποθετεί στην ουρά μαζί με τον χρόνο που το πρόγραμμα τις έλαβε. Στην συνέχεια θα υπάρχουν τα νήματα που θα περιμένουν και μόλις κάποια αίτηση μπει στην ουρά θα την βγάζουν από εκεί και θα την εκτελούν μέσω του process\_request που υπήρχε και πριν,ελαφρώς αλλαγμένο. Προφανώς για να γίνει αυτό προσθέσαμε κάποιες δομές και μεθόδους, πειράξαμε κάποιες από τις ήδη υπάρχουσες δομές και σε κάποια σημεία βάλαμε locks και conditions για την ομαλή συνεργασία των νημάτων. Παρακάτω περιγράφεται  σε κάθε μέθοδο ξεχωριστά ακριβώς τι κάνουμε.
+Alternative key/value stores and embedded databases:
 
-**Δομές που έχουμε προσθέσει στον**  **server**** :**
+ * [MDB](http://symas.com/mdb/) uses mmap() and is very fast (not quite as tiny/simple/portable)
+ * [CDB](http://cr.yp.to/cdb.html) is also minimal and fast, probably the closest thing to this (but has a 4gb size limit)
+ * [Kyoto Cabinet](http://fallabs.com/kyotocabinet/) is very fast, full-featured, and modern (license required for commercial use)
+ * [SQLite](http://www.sqlite.org/) gives you a complete embedded SQL server (public domain, very mature, much larger)
+ * Others include GDBM, NDBM, Berkeley DB, etc. Use your Googles. :)
 
-**-**** queue ****:** Καταρχήν έχουμε δημιουργήσει μια δομή queue που είναι η ουρά μας και εκεί θα αποθηκεύονται προσωρινά οι αιτήσεις. Η δομή αυτή αποτελείται από έναν πίνακα και από το rear για να ξέρουμε πόσα στοιχεία έχει μέσα.
+KISSDB is good if you want space-efficient relatively fast write-once/read-many storage
+of keys mapped to values. It's not a good choice if you need searches, indexes, delete,
+structured storage, or widely varying key/value sizes. It's also probably not a good
+choice if you need a long-lived database for critical data, since it lacks recovery
+features and is brittle if its internals are modified. It would be better for a cache
+of data that can be restored or "re-learned," such as keys, Bitcoin transactions, nodes
+on a peer-to-peer network, log analysis results, rendered web pages, session cookies,
+auth tokens, etc.
 
-**-**** queueRequest ****:** Μόλις λάβει μια νέα σύνδεση το νήμα που είναι υπεύθυνο να βάζει τις αιτήσεις στην ουρά για να τις πάρουν μετά τα άλλα νήματα και να τις διεκπεραιώσουν δημιουργεί μία queueRequest που αποτελείται από τον &quot;αριθμό&quot; της σύνδεσης και τον χρόνο που έγινε η σύνδεση ώστε να υπολογίσει μετά τον χρόνο αναμονής.
+KISSDB is in the public domain as according to the [Creative Commons Public Domain Dedication](http://creativecommons.org/publicdomain/zero/1.0/).
+One reason it was written was the poverty of simple key/value databases with wide open licensing. Even old ones like GDBM have GPL, not LGPL, licenses.
 
-**Μέθοδοι που έχουμε προσθέσει/πειράξει στον**  **server**** :**
+See comments in kissdb.h for documentation. Makefile can be used to build
+a test program on systems with gcc.
 
-**-**** removeQ ****:** (Το απλό remove σαν όνομα μας έβγαζε&quot;[Err](https://stackoverflow.com/questions/40021144/error-conflicting-types-for-remove)or : Conflictingtypesfor &#39;remove&#39;&quot;, γι&#39;αυτό βάλαμε και το Q) ** ** Αφαιρεί από την ουρά το 1ο αντικείμενο και πάει όλα τα υπόλοιπα μια θέση αριστερά ώστε να πάει το δεύτερο πρώτο το τρίτο δεύτερο κοκ. Αυτή η διαδικασία γίνεται μέσα σε lock γιατί πειράζει την ουρά που είναι κοινόχρηστη μεταξύ των νημάτων. Επίσηςέχουμε προσθέσει μια μεταβλητή συνθήκης, ώστε όταν η ουρά είναι άδεια να περιμένει να μπει έστω και ένα στοιχείο πριν προχωρήσει.
-
-**-**** insert ****:** Προσθέτει στο τέλος της ουράς αντικείμενα queueRequest. Όπως και στο removeQ η όλη διαδικασία γίνεται μέσα σε lock γιατί πειράζουμε την ουρά που είναι κοινόχρηστη και έχουμε προσθέσει μια μεταβλητή συνθήκης, ώστε όταν η ουρά είναι γεμάτη να περιμένει να βγει έστω και ένα στοιχείο πριν προχωρήσει.
-
-**-**** isQueueEmpty ****:** Ελέγχει αν η ουρά είναι άδεια.
-
-**-**** isQueueFull ****:** Ελέγχει αν η ουρά είναι γεμάτη.
-
-**-**** initializeThreads ****:** Αρχικοποιεί τα νήματα,ο αριθμός των οποίων εξαρτάται από μια σταθερά που ορίζεται στην αρχή του προγράμματος καθώς επίσης και τις μεταβλητές του μέσου χρόνου αναμονής, καθώς και το μέσο χρόνο εξυπηρέτησης των αιτήσεων.
-
-**-**** threadsFunc ****:** Είναι η μέθοδος που εκτελούν τα νήματα. Στην ουσία αυτό που έχει να κάνει κάθε νήμα είναι να πάρει μια αίτηση από την ουρά και να εκτελέσει την process\_request για αυτήν την αίτηση. Επίσης κρατάει τους χρόνους για να υπολογίσει τον χρόνο αναμονής και τον χρόνο εκτέλεσης των αιτήσεων. Στο τέλος ενημερώνει τις κοινόχρηστες μεταβλητές του χρόνου αναμονής, του χρόνου εκτέλεσης καθώς και των ολοκληρωμένων αιτήσεων, χρησιμοποιώντας locks και εδώ γιατί οι μεταβλητές αυτές είναι κοινόχρηστες για όλα τα νήματα. Όλα αυτά είναι μέσα σε μία while ώστε κάθε νήμα αφού τελειώσει να περιμένει να ξαναμπεί κάποια νέα αίτηση στην ουρά.
-
-**-**** CtrlZ ****:** Είναι η μέθοδος για τον τερματισμό του νήματος. Αρχικά υπολογίζει τον μέσο χρόνο αναμονής και τον μέσο χρόνο εξυπηρέτησης των αιτήσεων, τυπώνει το πλήθος των αιτήσεων που έχουν εξυπηρετηθεί καθώς και τους μέσους χρόνους αναμονής και εξυπηρέτησης αντίστοιχα και στην συνέχεια τερματίζει το πρόγραμμα.
-
-**-**** process ****\_**** request ****:** Στην process\_request το πρόβλημα δημιουργούνταν στο σημείο που έγραφε και διάβαζε από την βάση δεδομένων. Εκεί μπορούμε να έχουμε πολλά νήματα να διαβάζουν αλλά ένα μόνο να γράφει και ποτέ ένα να γράφει και πολλά να διαβάζουν. Αυτό είναι το γνωστό πρόβλημα συγχρονισμού αναγνωστών-γραφέων. Χρησιμοποιήσαμε τον αλγόριθμο και εκτός αυτού αφού κάθε νήμα τελειώσει με το διάβασμα/ανάγνωση από την βάση δεδομένων πάλι με ένα lock ενημερώνει(μειώνει κατά 1) τις μεταβλητές που μετράνε το πλήθος των γραφέων και των αναγνωστών αντίστοιχα.
-
-**-**** main ****:** Εδώ στην ουσία πειράξαμε την ήδη υπάρχουσα while. Αφαιρέσαμε την process\_request και το close της αίτησης,τα οποία πήγαν στην **threadsFunc****.** Επίσης μέσα στην while όταν δεχτεί μια σύνδεση κρατάει τον χρόνο και δημιουργεί ένα queueRequest με τον αριθμό της αίτησης και τον χρόνο το οποίο βάζει στην ουρά. Δεν δημιουργήσαμε νέο νήμα με αυτήν την while σαν μέθοδο γιατί είναι ένα και δεν θα επηρέαζε κάπου την λειτουργικότητα του προγράμματος
-
-**Μέθοδοι που έχουμε προσθέσει/πειράξει στον**  **client**** :**
-
-**-**** threadsFunc ****:** Ότι έκανε ο client πριν στα πολλαπλά get και put τώρα το κάνει εδώ μέσα. Η μόνη διαφορά είναι ότι αντί για count εδώ έχουμε μια μεταβλητή count1 η οποία όταν τροποποιείται υπάρχουν lock για τα άλλα νήματα γιατί είναι κοινόχρηστη. Ο λόγος που προσθέσαμε αυτήν την μεταβλητή είναι γιατί τα πολλαπλά get και put υλοποιούνται όταν καλούμε τον client με παράμετρο -i και μετά το i μπαίνει ένας αριθμός που είναι το πόσες φορές θα στείλει τις αιτήσεις. Αυτός ο αριθμός είναι ο αριθμός count. Μετά από αυτά το πρόγραμμα αρχικοποιεί στην main κάποιες παραμέτρους απαραίτητες για την σύνδεση που είναι κοινές για όλα τα νήματα και τρέχει αυτό το κομμάτι κώδικα κάθε νήμα ξεχωριστά. Στο σημείο που υπήρχε αυτός ο κώδικας βάζουμε count1=count και αρχικοποιούμε τα νήματα.
-
-**-**** main ****:** Κάποιες μεταβλητές από την main που χρειάζονται για την δημιουργία σύνδεσης έγιναν global ώστε να είναι προσβάσιμες από όλα τα νήματα. Σε αυτές τις μεταβλητές δεν έχουμε lock γιατί απλά τις διαβάζουν τα νήματα αλλά δεν τις πειράζουν. Επίσης έγιναν οι αλλαγές που περιγράφηκαν παραπάνω και τέλος μετά το count1=count δημιουργούμε τα νήματα εκεί που θέλουμε να τα χρησιμοποιήσουμε και με την εντολή join περιμένουμε τα νήματα να τελειώσουν την εκτέλεσή τους πριν τερματίσουμε το πρόγραμμα.
-
-**Έλεγχος που κάναμε:**
-
-Αρχικά για να τεστάρουμε ότι όντως δουλεύει παράλληλα βάλαμε στον client 2 νήματα και του βάλαμε να στείλει 3 πακέτα αιτήσεων. Όπως αναμενόταν τα πρώτα 2 πηγαίναν σχετικά παράλληλα, ενώ το 3ο πήγε μετά μόνο του. Από εκεί και πέρα και για να ξεκαθαρίσουμε ποιες είναι κατάλληλες τιμές για τις μεταβλητές του serverMAXSIZE(μέγιστο μέγεθος ουράς) και NUMTHREAD(αριθμός νημάτων) διατηρήσαμε σταθερό τον client στα 4 νήματα και στα 4 πακέτα αιτήσεων get και 4 πακέτα αιτήσεων put ώστε να έχουμε παντού σαν βάση το ίδιο για να παρατηρήσουμε τις διαφορές(κάναμε και κάποιες δοκιμές με 2 νήματα και 1,2,3 πακέτα αιτήσεων,με το να το ανεβάσουμε στα 4 αυξήσαμε τον χρόνο αναμονής σε μικρό αριθμό νημάτων στον server γιατί οι αιτήσεις ερχόταν πιο γρήγορα,αλλά καμία αίτηση δεν χανόταν).
-
-Κάποιες μετρήσεις έγιναν 2 φορές για επιβεβαίωση των αποτελεσμάτων. Γενικά παρατηρούμε ότι οι διαφορές είναι πάρα πολύ μικρές αλλά όσο αυξάνουμε τον αριθμό των νημάτων και το μέγεθος της στοίβας τόσο αυξάνεται και ο μέσος χρόνος αναμονής. Ο μέσος χρόνος εξυπηρέτησης διαφέρει στα όρια του στατιστικού λάθους. Έτσι  ιδανικά θέσαμε MAXSIZE=6 και NUMTHREAD=4 ως τις πιο κατάλληλες τιμές στο σύστημά μας, σύμφωνα με τις μετρήσεις.
-
-Τα υπόλοιπα αρχεία δεν τα πειράξαμε καθόλου.
+Author: Adam Ierymenko / ZeroTier Networks LLC
